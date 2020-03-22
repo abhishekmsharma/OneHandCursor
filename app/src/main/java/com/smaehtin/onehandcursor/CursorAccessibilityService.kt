@@ -2,6 +2,7 @@ package com.smaehtin.onehandcursor
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
+import android.app.NotificationManager
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Path
@@ -15,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import java.util.*
+import java.util.function.Function
 import kotlin.concurrent.schedule
 import kotlin.math.max
 import kotlin.math.min
@@ -37,9 +39,11 @@ class CursorAccessibilityService : AccessibilityService() {
     private lateinit var rightSwipePadView: View
     private lateinit var trackerView: View
     private lateinit var windowManager: WindowManager
+    private lateinit var notificationManager: NotificationManager
 
     private var firstMove = false
     private var hasMovedMoreThanClickThreshold = false
+    private var wasNotificationPanelOpened = false
     private var leftSide = false
     private var moving = false
     private var startX = 0
@@ -58,6 +62,7 @@ class CursorAccessibilityService : AccessibilityService() {
         sharedInstance = this
 
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
         displayMetrics = DisplayMetrics()
         windowManager.defaultDisplay.getMetrics(displayMetrics)
@@ -299,6 +304,7 @@ class CursorAccessibilityService : AccessibilityService() {
 
                             gesture.addStroke(GestureDescription.StrokeDescription(path, 0, 1))
                             dispatchGesture(gesture.build(), null, null)
+                            wasNotificationPanelOpened = false
                         }
                     }
 
@@ -356,10 +362,24 @@ class CursorAccessibilityService : AccessibilityService() {
 
         if (cursorY > MIN_CURSOR_Y) {
             setPosition(cursorView, cursorX, cursorY)
-        } else {
-            removeView(trackerView)
-            removeView(cursorView)
+        } else if (!wasNotificationPanelOpened) {
+            setPosition(cursorView, cursorX, 0)
+            Class.forName("android.app.StatusBarManager")
+                .getMethod("expandNotificationsPanel")
+                .invoke(getSystemService("statusbar"))
+            wasNotificationPanelOpened = true
+
+            delayedFunctionCaller(TIMEOUT_MILLISECONDS, fun() {
+                wasNotificationPanelOpened = false
+            })
         }
+    }
+
+    private fun delayedFunctionCaller(delay_execution: Long, func: () -> Unit) {
+        Handler().postDelayed({
+            func()
+        }, delay_execution)
+
     }
 
     private fun setPosition(view: View, x: Int, y: Int) {
